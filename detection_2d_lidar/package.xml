@@ -5,7 +5,7 @@
   <version>0.0.1</version>
   <description>2D LIDAR detection</description>
   <maintainer email="stevenmackenski@gmail.com">Steven Mackenski</maintainer>
-  <maintainer email="abhishek47kashyap@gmail.com">Abhishek Kashyap</maintainer>
+  <maintainer email="csj15thu@gmail.com">Shengjian Chen</maintainer>
   <license>Apache-2.0</license>
 
   <test_depend>ament_copyright</test_depend>
