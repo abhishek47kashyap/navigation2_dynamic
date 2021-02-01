@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'detection_2d_lidar_node = detection_2d_lidar.detection_2d_lidar_node:main'
         ],
     },
 )
