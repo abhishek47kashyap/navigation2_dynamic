@@ -8,6 +8,7 @@ Example data-sets for 2D lidar datasets:
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import ReliabilityPolicy, QoSProfile
 import numpy as np
 from copy import deepcopy
 import itertools
@@ -123,7 +124,8 @@ class Detection2dLidar(Node):
         self.obstacles_circles = []  # list of obstacles represented as circles
 
         # Subscribe to /scan topic on which input lidar data is available
-        self.create_subscription(LaserScan, 'scan', self.callback_lidar_data, 10)
+        self.create_subscription(LaserScan, 'scan', self.callback_lidar_data,
+                                 QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
 
         # Publish to detector ('detection' topic has subscriber in kf_hungarian_tracker)
         self.detection_pub = self.create_publisher(ObstacleArray, 'detection', 10)
