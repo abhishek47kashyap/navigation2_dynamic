@@ -17,6 +17,7 @@ from sklearn.linear_model import LinearRegression
 from nav2_dynamic_msgs.msg import Obstacle, ObstacleArray
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Point
+from visualization_msgs.msg import MarkerArray, Marker
 
 
 class Line:
@@ -117,6 +118,8 @@ class Detection2dLidar(Node):
         self.p_max_circle_radius = self.get_parameter('p_max_circle_radius').value
         self.p_radius_enlargement = self.get_parameter('p_radius_enlargement').value
 
+        self.header = None
+
         # Initialize some empty lists
         self.points = []  # cartesian points (XY coordinates)
         self.groups = []  # list of Group() objects
@@ -129,8 +132,10 @@ class Detection2dLidar(Node):
 
         # Publish to detector ('detection' topic has subscriber in kf_hungarian_tracker)
         self.detection_pub = self.create_publisher(ObstacleArray, 'detection', 10)
+        self.marker_pub = self.create_publisher(MarkerArray, 'marker', 10)
 
     def callback_lidar_data(self, laser_scan):
+        self.header = laser_scan.header
         theta = np.arange(laser_scan.angle_min, laser_scan.angle_max, laser_scan.angle_increment)
         r = np.array(laser_scan.ranges)
 
@@ -176,10 +181,10 @@ class Detection2dLidar(Node):
         """
 
         self.grouping()
-        self.splitting()
-        self.segmentation()
-        self.segment_merging()
-        self.circle_extraction()
+        # self.splitting()
+        # self.segmentation()
+        # self.segment_merging()
+        # self.circle_extraction()
 
     def grouping(self):
         """
@@ -213,6 +218,34 @@ class Detection2dLidar(Node):
             self.groups.append(a_group)
             points_remaining = [point for point in points_remaining if point not in a_group.list_of_points]
 
+        self.get_logger().info("grouping() completed, number of groups = %d" % len(self.groups))
+
+        # visualizing in RViz
+        marker_array = MarkerArray()
+        marker_list = []
+        for grp in self.groups:
+            marker = Marker()
+            marker.header = self.header
+            marker.type = 3  # cylinder
+            marker.action = 0   # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
+            marker.color.a = 0.5
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.scale.x = 1.0
+            marker.scale.y = 1.0
+            marker.scale.z = 1.0
+            # group "center" by averaging XY of all points
+            grp_x, grp_y = 0.0, 0.0
+            for pt in grp.list_of_points:
+                grp_x += pt.x
+                grp_y += pt.y
+            marker.pose.position.x = grp_x / grp.num_points()
+            marker.pose.position.y = grp_y / grp.num_points()
+            marker_list.append(marker)
+        marker_array.markers = marker_list
+        self.marker_pub.publish(marker_array)
+
     def splitting(self):
         """
         Section 2.2 of the paper
@@ -244,7 +277,7 @@ class Detection2dLidar(Node):
             # Find farthest point from longest line (this point would be somewhere "between" the end_points)
             d_max = 0
             farthest_point = Point()
-            for pt in grp:
+            for pt in grp.list_of_points:
                 if pt in [end_point_1, end_point_2]:
                     continue  # end points of the longest line should not be used
 
