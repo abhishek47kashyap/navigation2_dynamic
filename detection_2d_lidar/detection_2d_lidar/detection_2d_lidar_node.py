@@ -118,9 +118,9 @@ class Detection2dLidar(Node):
         self.p_radius_enlargement = self.get_parameter('p_radius_enlargement').value
 
         # Initialize some empty lists
-        self.points = []   # cartesian points (XY coordinates)
-        self.groups = []   # list of Group() objects
-        self.obstacles_lines = []   # list of obstacles represented as lines
+        self.points = []  # cartesian points (XY coordinates)
+        self.groups = []  # list of Group() objects
+        self.obstacles_lines = []  # list of obstacles represented as lines
         self.obstacles_circles = []  # list of obstacles represented as circles
 
         # Subscribe to /scan topic on which input lidar data is available
@@ -131,21 +131,26 @@ class Detection2dLidar(Node):
         self.detection_pub = self.create_publisher(ObstacleArray, 'detection', 10)
 
     def callback_lidar_data(self, laser_scan):
-        theta = np.linspace(laser_scan.angle_min, laser_scan.angle_increment, laser_scan.angle_max)  # in radians
+        theta = np.arange(laser_scan.angle_min, laser_scan.angle_max, laser_scan.angle_increment)
         r = np.array(laser_scan.ranges)
 
         # making sure len(theta) == len(r)  [is this check even required?]
         if len(theta) != len(r):
-            self.get_logger().warn("Polar coordinates theta and r have unequal lengths")
             if len(theta) < len(r):
                 r = r[:len(theta)]  # truncate r
+                self.get_logger().warn(
+                    "Polar coordinates theta and r have unequal lengths (%d and %d resp.), r has been truncated" % (
+                        len(theta), len(r)))
             else:
                 theta = theta[:len(r)]  # truncate theta
+                self.get_logger().warn(
+                    "Polar coordinates theta and r have unequal lengths (%d and %d resp.), theta has been truncated" % (
+                        len(theta), len(r)))
 
         # convert points from polar coordinates to cartesian coordinates
         indices_of_valid_r = [i for i in range(len(r)) if laser_scan.range_min <= r[i] < laser_scan.range_max]
         r, theta = [r[i] for i in indices_of_valid_r], [theta[i] for i in indices_of_valid_r]
-        self.points = [Point(x=r[i] * np.cos(theta[i]), y=r[i] * np.sin(theta[i]), z=0)  # 2D lidar doesn't have Z
+        self.points = [Point(x=r[i] * np.cos(theta[i]), y=r[i] * np.sin(theta[i]), z=0.0)  # 2D lidar doesn't have Z
                        for i in range(len(r))]
 
         self.detect_obstacles()
