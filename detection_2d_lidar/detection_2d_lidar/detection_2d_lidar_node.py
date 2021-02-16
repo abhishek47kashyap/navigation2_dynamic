@@ -126,6 +126,8 @@ class Detection2dLidar(Node):
         self.obstacles_lines = []  # list of obstacles represented as lines
         self.obstacles_circles = []  # list of obstacles represented as circles
 
+        self._grouping_IDs = []   # for keeping track of which markers to delete in grouping()
+
         # Subscribe to /scan topic on which input lidar data is available
         self.create_subscription(LaserScan, 'scan', self.callback_lidar_data,
                                  QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
@@ -223,18 +225,24 @@ class Detection2dLidar(Node):
         # visualizing in RViz
         marker_array = MarkerArray()
         marker_list = []
+        dummy_id = 0
         for grp in self.groups:
             marker = Marker()
+            marker.id = dummy_id
             marker.header = self.header
-            marker.type = 3  # cylinder
+            marker.type = Marker.CYLINDER
             marker.action = 0   # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
             marker.color.a = 0.5
             marker.color.r = 1.0
             marker.color.g = 0.0
             marker.color.b = 0.0
-            marker.scale.x = 1.0
-            marker.scale.y = 1.0
-            marker.scale.z = 1.0
+            marker.scale.x = 0.5
+            marker.scale.y = 0.5
+            marker.scale.z = 0.5
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = 0.0
+            marker.pose.orientation.w = 1.0
             # group "center" by averaging XY of all points
             grp_x, grp_y = 0.0, 0.0
             for pt in grp.list_of_points:
@@ -243,6 +251,17 @@ class Detection2dLidar(Node):
             marker.pose.position.x = grp_x / grp.num_points()
             marker.pose.position.y = grp_y / grp.num_points()
             marker_list.append(marker)
+            if dummy_id not in self._grouping_IDs:
+                self._grouping_IDs.append(dummy_id)
+            dummy_id += 1
+
+        # delete markers from previous message that are not present in current message
+        for id_to_del in self._grouping_IDs[dummy_id:]:
+            marker = Marker()
+            marker.id = id_to_del
+            marker.action = Marker.DELETE
+            marker_list.append(marker)
+        self._grouping_IDs = self._grouping_IDs[:dummy_id]
         marker_array.markers = marker_list
         self.marker_pub.publish(marker_array)
 
