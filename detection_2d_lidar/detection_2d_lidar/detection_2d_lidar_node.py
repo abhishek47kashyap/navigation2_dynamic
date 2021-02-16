@@ -153,7 +153,16 @@ class Detection2dLidar(Node):
         self.points = [Point(x=r[i] * np.cos(theta[i]), y=r[i] * np.sin(theta[i]), z=0.0)  # 2D lidar doesn't have Z
                        for i in range(len(r))]
 
+        self.reset_state()
         self.detect_obstacles()
+
+    def reset_state(self):
+        """
+        Reset member variables for every new message
+        """
+        self.groups = []  # list of Group() objects
+        self.obstacles_lines = []  # list of obstacles represented as lines
+        self.obstacles_circles = []  # list of obstacles represented as circles
 
     def detect_obstacles(self):
         """
