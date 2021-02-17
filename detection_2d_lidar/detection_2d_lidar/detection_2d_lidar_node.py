@@ -13,11 +13,20 @@ import numpy as np
 from copy import deepcopy
 import itertools
 from sklearn.linear_model import LinearRegression
+import random
 
 from nav2_dynamic_msgs.msg import Obstacle, ObstacleArray
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Point
 from visualization_msgs.msg import MarkerArray, Marker
+
+
+def random_color():
+    color_rgb = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+    return [i/255 for i in color_rgb]
+
+
+COLOR_PALETTES = [random_color() for i in range(100)]
 
 
 class Line:
@@ -62,8 +71,10 @@ class Group:
             if r > max_range:
                 max_range = r
                 self.best_fit_line.endpoints[1].x = pt.x
-        self.best_fit_line.endpoints[0].y = regressor.predict(self.best_fit_line.endpoints[0].x)
-        self.best_fit_line.endpoints[1].y = regressor.predict(self.best_fit_line.endpoints[1].x)
+
+        # (reshaping and [0] indexing because of expected data type/structure requirement)
+        self.best_fit_line.endpoints[0].y = regressor.predict(np.array(self.best_fit_line.endpoints[0].x).reshape(1, -1))[0]
+        self.best_fit_line.endpoints[1].y = regressor.predict(np.array(self.best_fit_line.endpoints[1].x).reshape(1, -1))[0]
 
     def calculate_best_fit_circle(self):
         """
@@ -76,10 +87,10 @@ class Group:
 
         # out of the two candidate vertices, pick the one that points away from the origin
         candidate_third_vertices = [Point(), Point()]
-        candidate_third_vertices[0].x = midpoint_x + slope_of_perpendicular * np.sqrt(3)
-        candidate_third_vertices[0].y = midpoint_y + slope_of_perpendicular * np.sqrt(3)
-        candidate_third_vertices[1].x = midpoint_x - slope_of_perpendicular * np.sqrt(3)
-        candidate_third_vertices[1].y = midpoint_y - slope_of_perpendicular * np.sqrt(3)
+        candidate_third_vertices[0].x = (midpoint_x + slope_of_perpendicular * np.sqrt(3))[0]
+        candidate_third_vertices[0].y = (midpoint_y + slope_of_perpendicular * np.sqrt(3))[0]
+        candidate_third_vertices[1].x = (midpoint_x - slope_of_perpendicular * np.sqrt(3))[0]
+        candidate_third_vertices[1].y = (midpoint_y - slope_of_perpendicular * np.sqrt(3))[0]
         third_vertex = candidate_third_vertices[0] \
             if distance_from_origin(candidate_third_vertices[0]) > distance_from_origin(candidate_third_vertices[1]) \
             else candidate_third_vertices[1]
@@ -183,10 +194,10 @@ class Detection2dLidar(Node):
         """
 
         self.grouping()
-        # self.splitting()
-        # self.segmentation()
-        # self.segment_merging()
-        # self.circle_extraction()
+        self.splitting()
+        self.segmentation()
+        self.segment_merging()
+        self.circle_extraction()
 
     def grouping(self):
         """
@@ -223,47 +234,7 @@ class Detection2dLidar(Node):
         self.get_logger().info("grouping() completed, number of groups = %d" % len(self.groups))
 
         # visualizing in RViz
-        marker_array = MarkerArray()
-        marker_list = []
-        dummy_id = 0
-        for grp in self.groups:
-            marker = Marker()
-            marker.id = dummy_id
-            marker.header = self.header
-            marker.type = Marker.CYLINDER
-            marker.action = 0   # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
-            marker.color.a = 0.5
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 0.0
-            marker.scale.x = 0.5
-            marker.scale.y = 0.5
-            marker.scale.z = 0.5
-            marker.pose.orientation.x = 0.0
-            marker.pose.orientation.y = 0.0
-            marker.pose.orientation.z = 0.0
-            marker.pose.orientation.w = 1.0
-            # group "center" by averaging XY of all points
-            grp_x, grp_y = 0.0, 0.0
-            for pt in grp.list_of_points:
-                grp_x += pt.x
-                grp_y += pt.y
-            marker.pose.position.x = grp_x / grp.num_points()
-            marker.pose.position.y = grp_y / grp.num_points()
-            marker_list.append(marker)
-            if dummy_id not in self._grouping_IDs:
-                self._grouping_IDs.append(dummy_id)
-            dummy_id += 1
-
-        # delete markers from previous message that are not present in current message
-        for id_to_del in self._grouping_IDs[dummy_id:]:
-            marker = Marker()
-            marker.id = id_to_del
-            marker.action = Marker.DELETE
-            marker_list.append(marker)
-        self._grouping_IDs = self._grouping_IDs[:dummy_id]
-        marker_array.markers = marker_list
-        self.marker_pub.publish(marker_array)
+        # self.marker_pub.publish(self.visualize_groups())
 
     def splitting(self):
         """
@@ -282,7 +253,7 @@ class Detection2dLidar(Node):
                 continue
 
             # Find longest line
-            pairwise_points = list(itertools.combinations(grp, 2))
+            pairwise_points = list(itertools.combinations(grp.list_of_points, 2))
             longest_length = 0
             end_point_1, end_point_2 = Point(), Point()
             for pair in pairwise_points:
@@ -320,7 +291,7 @@ class Detection2dLidar(Node):
                 else:
                     grp2.list_of_points.append(farthest_point)
                 # now go through the remaining points
-                for pt in grp:
+                for pt in grp.list_of_points:
                     if pt in [end_point_1, end_point_2, farthest_point]:  # these have already been dealt with
                         continue
 
@@ -340,6 +311,10 @@ class Detection2dLidar(Node):
                 groups_after_splitting.append(grp)
 
         self.groups = groups_after_splitting
+        self.get_logger().info("splitting() completed, number of groups = %d" % len(self.groups))
+
+        # visualizing in RViz
+        # self.marker_pub.publish(self.visualize_groups())
 
     def segmentation(self):
         """
@@ -349,6 +324,8 @@ class Detection2dLidar(Node):
         """
         for grp in self.groups:
             grp.calculate_best_fit_line()
+
+        # self.get_logger().info("segmentation() completed")
 
     def segment_merging(self):
         """
@@ -397,6 +374,10 @@ class Detection2dLidar(Node):
 
         # it's possible duplicates have crept into merged_groups, so they need to be removed
         self.groups = list(set(merged_groups))
+        self.get_logger().info("segment_merging() completed, number of groups = %d" % len(self.groups))
+
+        # visualizing in RViz
+        # self.marker_pub.publish(self.visualize_groups())
 
     def circle_extraction(self):
         """
@@ -410,10 +391,58 @@ class Detection2dLidar(Node):
             grp.calculate_best_fit_circle()
 
             # check whether circle (after enlargement) is to be added to list of circle obstacles or line obstacles
-            if grp.calculate_best_fit_circle.radius + self.p_radius_enlargement <= self.p_max_circle_radius:
+            if grp.best_fit_circle.radius + self.p_radius_enlargement <= self.p_max_circle_radius:
                 self.obstacles_circles.append(grp)
             else:
                 self.obstacles_lines.append(grp)
+
+        self.get_logger().info("%d groups separated into %d lines and %d circles" % (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles)))
+
+    def visualize_groups(self):
+        """
+        Visualize all groups in self.groups, where every group gets its own color.
+        :return: a MarkerArray() to be published to RViz
+        """
+        marker_list = []
+        dummy_id = 0
+        for grp in self.groups:
+            color_for_this_group = COLOR_PALETTES[self.groups.index(grp)]
+            for pt in grp.list_of_points:
+                marker = Marker()
+                marker.id = dummy_id
+                marker.header = self.header
+                marker.type = Marker.SPHERE
+                marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
+                marker.color.a = 0.5
+                marker.color.r = color_for_this_group[0]
+                marker.color.g = color_for_this_group[1]
+                marker.color.b = color_for_this_group[2]
+                marker.scale.x = 0.1
+                marker.scale.y = 0.1
+                marker.scale.z = 0.1
+                marker.pose.orientation.x = 0.0
+                marker.pose.orientation.y = 0.0
+                marker.pose.orientation.z = 0.0
+                marker.pose.orientation.w = 1.0
+                marker.pose.position.x = pt.x
+                marker.pose.position.y = pt.y
+                marker_list.append(marker)
+                if dummy_id not in self._grouping_IDs:
+                    self._grouping_IDs.append(dummy_id)
+                dummy_id += 1
+
+        # delete markers from previous message that are not present in current message
+        for id_to_del in self._grouping_IDs[dummy_id:]:
+            marker = Marker()
+            marker.id = id_to_del
+            marker.action = Marker.DELETE
+            marker_list.append(marker)
+        self._grouping_IDs = self._grouping_IDs[:dummy_id]
+
+        # publish
+        marker_array = MarkerArray()
+        marker_array.markers = marker_list
+        return marker_array
 
 
 def distance_from_origin(p: Point):
@@ -425,8 +454,8 @@ def distance_between_points(p1: Point, p2: Point):
 
 
 def distance_point_from_line(end_point_a: Point, end_point_b: Point, any_point: Point):
-    numerator = np.abs((end_point_a.x - end_point_b.x)(end_point_b.y - any_point.y) -
-                       (end_point_b.x - any_point.x)(end_point_a.y - end_point_b.y))
+    numerator = np.abs((end_point_a.x - end_point_b.x)*(end_point_b.y - any_point.y) -
+                       (end_point_b.x - any_point.x)*(end_point_a.y - end_point_b.y))
     denominator = np.sqrt((end_point_a.x - end_point_b.x) ** 2 + (end_point_a.y - end_point_b.y) ** 2)
     return numerator / denominator
 
