@@ -137,7 +137,9 @@ class Detection2dLidar(Node):
         self.obstacles_lines = []  # list of obstacles represented as lines
         self.obstacles_circles = []  # list of obstacles represented as circles
 
-        self._grouping_IDs = []   # for keeping track of which markers to delete in grouping()
+        # for keeping track of which markers to delete
+        self._point_IDs = []
+        self._obstacle_IDs = []
 
         # Subscribe to /scan topic on which input lidar data is available
         self.create_subscription(LaserScan, 'scan', self.callback_lidar_data,
@@ -396,7 +398,11 @@ class Detection2dLidar(Node):
             else:
                 self.obstacles_lines.append(grp)
 
-        self.get_logger().info("%d groups separated into %d lines and %d circles" % (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles)))
+        self.get_logger().info("%d groups separated into %d lines and %d circles" %
+                               (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles)))
+
+        # visualizing in RViz
+        # self.marker_pub.publish(self.visualize_obstacles())
 
     def visualize_groups(self):
         """
@@ -427,17 +433,85 @@ class Detection2dLidar(Node):
                 marker.pose.position.x = pt.x
                 marker.pose.position.y = pt.y
                 marker_list.append(marker)
-                if dummy_id not in self._grouping_IDs:
-                    self._grouping_IDs.append(dummy_id)
+                if dummy_id not in self._point_IDs:
+                    self._point_IDs.append(dummy_id)
                 dummy_id += 1
 
         # delete markers from previous message that are not present in current message
-        for id_to_del in self._grouping_IDs[dummy_id:]:
+        for id_to_del in self._point_IDs[dummy_id:]:
             marker = Marker()
             marker.id = id_to_del
             marker.action = Marker.DELETE
             marker_list.append(marker)
-        self._grouping_IDs = self._grouping_IDs[:dummy_id]
+        self._point_IDs = self._point_IDs[:dummy_id]
+
+        # publish
+        marker_array = MarkerArray()
+        marker_array.markers = marker_list
+        return marker_array
+
+    def visualize_obstacles(self):
+        """
+        Visualize line and circle obstacles
+        :return: a MarkerArray() to be published to RViz
+        """
+        marker_list = []
+        dummy_id = 0
+
+        # Obstacles represented by lines
+        for grp in self.obstacles_lines:
+            marker = Marker()
+            marker.id = dummy_id
+            marker.header = self.header
+            marker.type = Marker.LINE_STRIP
+            marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
+            marker.color.a = 0.8
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.scale.x = 0.1
+            marker.points = grp.best_fit_line.endpoints
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = 0.0
+            marker.pose.orientation.w = 1.0
+            marker_list.append(marker)
+            if dummy_id not in self._obstacle_IDs:
+                self._obstacle_IDs.append(dummy_id)
+            dummy_id += 1
+
+        # Obstacles represented by circles
+        for grp in self.obstacles_circles:
+            marker = Marker()
+            marker.id = dummy_id
+            marker.header = self.header
+            marker.type = Marker.CYLINDER
+            marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
+            marker.color.a = 0.8
+            marker.color.r = 0.0
+            marker.color.g = 0.0
+            marker.color.b = 1.0
+            marker.scale.x, marker.scale.y = grp.best_fit_circle.radius * 2, grp.best_fit_circle.radius * 2  # set different xy values for ellipse
+            marker.scale.z = 0.1
+            marker.pose.position.x = grp.best_fit_circle.center.x
+            marker.pose.position.y = grp.best_fit_circle.center.y
+            marker.pose.position.z = marker.scale.z / 2
+            marker.pose.orientation.x = 0.0
+            marker.pose.orientation.y = 0.0
+            marker.pose.orientation.z = 0.0
+            marker.pose.orientation.w = 1.0
+            marker_list.append(marker)
+            if dummy_id not in self._obstacle_IDs:
+                self._obstacle_IDs.append(dummy_id)
+            dummy_id += 1
+
+        # delete detections from previous message that are not present in current message
+        for id_to_del in self._obstacle_IDs[dummy_id:]:
+            marker = Marker()
+            marker.id = id_to_del
+            marker.action = Marker.DELETE
+            marker_list.append(marker)
+        self._obstacle_IDs = self._obstacle_IDs[:dummy_id]
 
         # publish
         marker_array = MarkerArray()
