@@ -48,6 +48,7 @@ class Group:
         self.best_fit_line = Line()
         self.best_fit_circle = Circle()
 
+    @property
     def num_points(self):
         return len(self.list_of_points)
 
@@ -80,30 +81,47 @@ class Group:
         """
         Construct equilateral triangle with best fit line as base, and then get its circum-circle
         """
-        # get midpoint of the best fit line and its perpendicular slope
-        midpoint_x = (self.best_fit_line.endpoints[0].x + self.best_fit_line.endpoints[1].x) / 2
-        midpoint_y = (self.best_fit_line.endpoints[0].y + self.best_fit_line.endpoints[1].y) / 2
-        slope_of_perpendicular = -1 / self.best_fit_line.slope
 
-        # out of the two candidate vertices, pick the one that points away from the origin
-        candidate_third_vertices = [Point(), Point()]
-        candidate_third_vertices[0].x = (midpoint_x + slope_of_perpendicular * np.sqrt(3))[0]
-        candidate_third_vertices[0].y = (midpoint_y + slope_of_perpendicular * np.sqrt(3))[0]
-        candidate_third_vertices[1].x = (midpoint_x - slope_of_perpendicular * np.sqrt(3))[0]
-        candidate_third_vertices[1].y = (midpoint_y - slope_of_perpendicular * np.sqrt(3))[0]
-        third_vertex = candidate_third_vertices[0] \
-            if distance_from_origin(candidate_third_vertices[0]) > distance_from_origin(candidate_third_vertices[1]) \
-            else candidate_third_vertices[1]
+        # get X and Y centroids
+        self.best_fit_circle.center.x = 0.0
+        self.best_fit_circle.center.y = 0.0
+        for point in self.list_of_points:
+            self.best_fit_circle.center.x += point.x
+            self.best_fit_circle.center.y += point.y
+        self.best_fit_circle.center.x /= self.num_points
+        self.best_fit_circle.center.y /= self.num_points
 
-        # calculate radius and center of the best fit circle
-        self.best_fit_circle.radius = distance_between_points(self.best_fit_line.endpoints[0],
-                                                              self.best_fit_line.endpoints[1]) / np.sqrt(3)
-        self.best_fit_circle.center.x = (self.best_fit_line.endpoints[0].x +
-                                         self.best_fit_line.endpoints[1].x +
-                                         third_vertex.x) / 3
-        self.best_fit_circle.center.y = (self.best_fit_line.endpoints[0].y +
-                                         self.best_fit_line.endpoints[1].y +
-                                         third_vertex.y) / 3
+        # get radius
+        self.best_fit_circle.radius = 0
+        for point in self.list_of_points:
+            d = distance_between_points(point, self.best_fit_circle.center)
+            if d > self.best_fit_circle.radius:
+                self.best_fit_circle.radius = d
+
+        # # get midpoint of the best fit line and its perpendicular slope
+        # midpoint_x = (self.best_fit_line.endpoints[0].x + self.best_fit_line.endpoints[1].x) / 2
+        # midpoint_y = (self.best_fit_line.endpoints[0].y + self.best_fit_line.endpoints[1].y) / 2
+        # slope_of_perpendicular = -1 / self.best_fit_line.slope
+        #
+        # # out of the two candidate vertices, pick the one that points away from the origin
+        # candidate_third_vertices = [Point(), Point()]
+        # candidate_third_vertices[0].x = (midpoint_x + slope_of_perpendicular * np.sqrt(3))[0]
+        # candidate_third_vertices[0].y = (midpoint_y + slope_of_perpendicular * np.sqrt(3))[0]
+        # candidate_third_vertices[1].x = (midpoint_x - slope_of_perpendicular * np.sqrt(3))[0]
+        # candidate_third_vertices[1].y = (midpoint_y - slope_of_perpendicular * np.sqrt(3))[0]
+        # third_vertex = candidate_third_vertices[0] \
+        #     if distance_from_origin(candidate_third_vertices[0]) > distance_from_origin(candidate_third_vertices[1]) \
+        #     else candidate_third_vertices[1]
+        #
+        # # calculate radius and center of the best fit circle
+        # self.best_fit_circle.radius = distance_between_points(self.best_fit_line.endpoints[0],
+        #                                                       self.best_fit_line.endpoints[1]) / np.sqrt(3)
+        # self.best_fit_circle.center.x = (self.best_fit_line.endpoints[0].x +
+        #                                  self.best_fit_line.endpoints[1].x +
+        #                                  third_vertex.x) / 3
+        # self.best_fit_circle.center.y = (self.best_fit_line.endpoints[0].y +
+        #                                  self.best_fit_line.endpoints[1].y +
+        #                                  third_vertex.y) / 3
 
 
 class Detection2dLidar(Node):
@@ -197,9 +215,9 @@ class Detection2dLidar(Node):
 
         self.grouping()
         self.splitting()
-        self.segmentation()
+        self.segmentation()   # calculates best fit line
         self.segment_merging()
-        self.circle_extraction()
+        self.circle_extraction()   # calculates best fit circle and categorizes into line vs. circle obstacles
 
     def grouping(self):
         """
@@ -251,7 +269,7 @@ class Detection2dLidar(Node):
 
         for grp in self.groups:
             # Skip group if it has too few points
-            if grp.num_points() <= self.p_min_group_points:
+            if grp.num_points <= self.p_min_group_points:
                 continue
 
             # Find longest line
@@ -491,7 +509,7 @@ class Detection2dLidar(Node):
             marker.color.r = 0.0
             marker.color.g = 0.0
             marker.color.b = 1.0
-            marker.scale.x, marker.scale.y = grp.best_fit_circle.radius * 2, grp.best_fit_circle.radius * 2  # set different xy values for ellipse
+            marker.scale.x, marker.scale.y = float(grp.best_fit_circle.radius * 2), float(grp.best_fit_circle.radius * 2)  # set different xy values for ellipse
             marker.scale.z = 0.1
             marker.pose.position.x = grp.best_fit_circle.center.x
             marker.pose.position.y = grp.best_fit_circle.center.y
