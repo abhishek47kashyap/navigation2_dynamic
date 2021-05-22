@@ -6,6 +6,7 @@ from copy import deepcopy
 import itertools
 from sklearn.linear_model import LinearRegression
 from scipy import optimize
+from enum import Enum
 
 from nav2_dynamic_msgs.msg import Obstacle, ObstacleArray
 from sensor_msgs.msg import LaserScan
@@ -28,6 +29,12 @@ class Circle:
     def __init__(self):
         self.radius: float
         self.center = Point()
+
+
+class CircleFittingMethods(Enum):
+    BARYCENTER_METHOD = 1
+    EQUILATERAL_TRIANGLE_METHOD = 2
+    LEAST_SQUARES_METHOD = 3
 
 
 class Group:
@@ -64,7 +71,38 @@ class Group:
         self.best_fit_line.endpoints[0].y = regressor.predict(np.array(self.best_fit_line.endpoints[0].x).reshape(1, -1))[0]
         self.best_fit_line.endpoints[1].y = regressor.predict(np.array(self.best_fit_line.endpoints[1].x).reshape(1, -1))[0]
 
-    def calculate_best_fit_circle(self):
+    def calculate_best_fit_circle(self, method: CircleFittingMethods = CircleFittingMethods.LEAST_SQUARES_METHOD):
+        """
+        Methods available are listed in Enum class CircleFittingMethods
+        """
+        if method == CircleFittingMethods.BARYCENTER_METHOD:
+            self._circle_fitting_barycenter_method()
+        elif method == CircleFittingMethods.EQUILATERAL_TRIANGLE_METHOD:
+            self._circle_fitting_equilateral_triangle_method()
+        elif method == CircleFittingMethods.LEAST_SQUARES_METHOD:
+            self._circle_fitting_least_squares_method()
+
+    def _circle_fitting_barycenter_method(self):
+        """
+        Get center by calculating centroid of points, and radius as the distance of the farthest point from center
+        """
+        # get X and Y centroids
+        self.best_fit_circle.center.x = 0.0
+        self.best_fit_circle.center.y = 0.0
+        for point in self.points:
+            self.best_fit_circle.center.x += point.x
+            self.best_fit_circle.center.y += point.y
+        self.best_fit_circle.center.x /= self.num_points
+        self.best_fit_circle.center.y /= self.num_points
+
+        # get radius
+        self.best_fit_circle.radius = 0
+        for point in self.points:
+            d = distance_between_points(point, self.best_fit_circle.center)
+            if d > self.best_fit_circle.radius:
+                self.best_fit_circle.radius = d
+
+    def _circle_fitting_equilateral_triangle_method(self):
         """
         Construct equilateral triangle with best fit line as base, and then get its circum-circle
         https://math.stackexchange.com/a/1484688/756875
@@ -91,6 +129,34 @@ class Group:
         self.best_fit_circle.center.x = (x1 + x2 + third_vertex.x) / 3
         self.best_fit_circle.center.y = (y1 + y2 + third_vertex.y) / 3
 
+    def _circle_fitting_least_squares_method(self):
+        """
+        Uses least square optimization
+        (code from https://gist.github.com/lorenzoriano/6799568)
+        """
+        all_X_coordinates, all_Y_coordinates = [], []
+        for point in self.points:
+            all_X_coordinates.append(point.x)
+            all_Y_coordinates.append(point.y)
+        all_X_coordinates = np.array(all_X_coordinates)
+        all_Y_coordinates = np.array(all_Y_coordinates)
+        x_m = np.mean(all_X_coordinates)
+        y_m = np.mean(all_Y_coordinates)
+
+        def calc_R(x, y, xc, yc):
+            """ calculate the distance of each 2D points from the center (xc, yc) """
+            return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
+
+        def f(c, x, y):
+            """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
+            Ri = calc_R(x, y, *c)
+            return Ri - Ri.mean()
+
+        center_estimate = x_m, y_m
+        center, ier = optimize.leastsq(f, center_estimate, args=(all_X_coordinates, all_Y_coordinates))
+        self.best_fit_circle.center.x, self.best_fit_circle.center.y = center
+        self.best_fit_circle.radius = calc_R(all_X_coordinates, all_Y_coordinates, *center).mean()
+
 
 class Detection2dLidar(Node):
     def __init__(self):
@@ -104,7 +170,7 @@ class Detection2dLidar(Node):
                                             ('p_min_group_points', 5),
                                             ('p_max_merge_separation', 0.02),
                                             ('p_max_merge_spread', 0.01),
-                                            ('p_max_circle_radius', 0.6),
+                                            ('p_max_circle_radius', 0.7),
                                             ('p_radius_enlargement', 0.25)])
         self.p_max_group_distance = self.get_parameter('p_max_group_distance').value
         self.p_distance_proportion = self.get_parameter('p_distance_proportion').value
@@ -139,7 +205,7 @@ class Detection2dLidar(Node):
     def callback_lidar_data(self, laser_scan):
         self.header = laser_scan.header
         theta = np.arange(laser_scan.angle_min, laser_scan.angle_max, laser_scan.angle_increment)
-        print("Laser scan min is %s, max is %s, angle increment is %s" % (str(laser_scan.angle_min), str(laser_scan.angle_max), str(laser_scan.angle_increment)))
+        print("-----------")
         r = np.array(laser_scan.ranges)
 
         # making sure len(theta) == len(r)  [is this check even required?]
