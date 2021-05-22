@@ -1,11 +1,3 @@
-"""
-Example data-sets for 2D lidar datasets:
-  ipb.uni-bonn.de/datasets (Cyrill Stachniss: Pre-2014 Robotics 2D-Laser Datasets)
-  github.com/ZRazer/2D-laser-datasets (bunch of bag files)
-  robotcar-dataset.robots.ox.ac.uk/documentation/#d-lidar
-  asrl.utias.utoronto.ca/datasets/mrclam/#Download
-"""
-
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import ReliabilityPolicy, QoSProfile
@@ -14,7 +6,6 @@ from copy import deepcopy
 import itertools
 from sklearn.linear_model import LinearRegression
 from scipy import optimize
-import random
 
 from nav2_dynamic_msgs.msg import Obstacle, ObstacleArray
 from sensor_msgs.msg import LaserScan
@@ -22,19 +13,15 @@ from geometry_msgs.msg import Point
 from visualization_msgs.msg import MarkerArray, Marker
 
 
-def random_color():
-    color_rgb = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
-    return [i/255 for i in color_rgb]
-
-
-COLOR_PALETTES = [random_color() for i in range(100)]
-
-
 class Line:
     def __init__(self):
         self.slope: float = 0.0
         self.intercept: float = 0.0
         self.endpoints = [Point(), Point()]
+
+    @property
+    def length(self):
+        return distance_between_points(self.endpoints[0], self.endpoints[1])
 
 
 class Circle:
@@ -54,10 +41,6 @@ class Group:
         return len(self.points)
 
     def calculate_best_fit_line(self):
-        # also look into RANSAC and Hough Transform:
-        # - https://answers.ros.org/question/66956/ransac-implementation-for-laser-scans/?answer=66966#post-id-66966
-        # - https://www.debugcn.com/en/article/989816.html
-
         # create numpy 'vectors' of X and Y coordinates
         x_coordinates = np.array([pt.x for pt in self.points]).reshape((-1, 1))
         y_coordinates = np.array([pt.y for pt in self.points])
@@ -77,62 +60,36 @@ class Group:
             if r > max_range:
                 max_range = r
                 self.best_fit_line.endpoints[1].x = pt.x
-
         # (reshaping and [0] indexing because of expected data type/structure requirement)
         self.best_fit_line.endpoints[0].y = regressor.predict(np.array(self.best_fit_line.endpoints[0].x).reshape(1, -1))[0]
         self.best_fit_line.endpoints[1].y = regressor.predict(np.array(self.best_fit_line.endpoints[1].x).reshape(1, -1))[0]
 
     def calculate_best_fit_circle(self):
         """
-        Get center by calculating centroid of points, and radius as the distance of the farthest point from center
+        Construct equilateral triangle with best fit line as base, and then get its circum-circle
+        https://math.stackexchange.com/a/1484688/756875
         """
+        x1 = self.best_fit_line.endpoints[0].x
+        x2 = self.best_fit_line.endpoints[1].x
+        y1 = self.best_fit_line.endpoints[0].y
+        y2 = self.best_fit_line.endpoints[1].y
+        midpoint_x = (x1 + x2) / 2
+        midpoint_y = (y1 + y2) / 2
+        L = self.best_fit_line.length
 
-        # x = np.r_[[pt.x for pt in self.points]]
-        # y = np.r_[[pt.y for pt in self.points]]
-        #
-        # def calc_R(xc, yc):
-        #     """ calculate the distance of each 2D points from the center (xc, yc) """
-        #     return np.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-        #
-        # def f_2(c):
-        #     """ calculate the algebraic distance between the data points and the mean circle centered at c=(xc, yc) """
-        #     Ri = calc_R(*c)
-        #     return Ri - Ri.mean()
-        #
-        # # get X and Y centroids
-        # centroidX, centroidY = 0.0, 0.0
-        # for point in self.points:
-        #     centroidX += point.x
-        #     centroidY += point.y
-        # centroidX /= self.num_points
-        # centroidY /= self.num_points
-        #
-        # center_estimate = np.array([centroidX, centroidY])
-        # center_2, _, _, _, ier = optimize.leastsq(f_2, center_estimate)
-        #
-        # self.best_fit_circle.center.x, self.best_fit_circle.center.y = center_2
-        # Ri_2 = calc_R(*center_2)
-        # self.best_fit_circle.radius = Ri_2.mean()
-        # residue = sum((Ri_2 - self.best_fit_circle.radius) ** 2)
-        #
-        # if ier not in [1, 2, 3, 4]:
-        #     print("WARNING: Best fit circle not found --> ier not 1,2,3,4, ier is %d" % ier)
+        candidate_third_vertices = [Point(), Point()]
+        candidate_third_vertices[0].x = midpoint_x + np.sqrt(3) * (y1 - y2) * L
+        candidate_third_vertices[0].y = midpoint_y + np.sqrt(3) * (x2 - x1) * L
+        candidate_third_vertices[1].x = midpoint_x - np.sqrt(3) * (y1 - y2) * L
+        candidate_third_vertices[1].y = midpoint_y - np.sqrt(3) * (x2 - x1) * L
+        third_vertex = candidate_third_vertices[0] \
+            if distance_from_origin(candidate_third_vertices[0]) > distance_from_origin(candidate_third_vertices[1]) \
+            else candidate_third_vertices[1]
 
-        # get X and Y centroids
-        self.best_fit_circle.center.x = 0.0
-        self.best_fit_circle.center.y = 0.0
-        for point in self.points:
-            self.best_fit_circle.center.x += point.x
-            self.best_fit_circle.center.y += point.y
-        self.best_fit_circle.center.x /= self.num_points
-        self.best_fit_circle.center.y /= self.num_points
-
-        # get radius
-        self.best_fit_circle.radius = 0
-        for point in self.points:
-            d = distance_between_points(point, self.best_fit_circle.center)
-            if d > self.best_fit_circle.radius:
-                self.best_fit_circle.radius = d
+        # calculate radius and center of the best fit circle
+        self.best_fit_circle.radius = L / np.sqrt(3)
+        self.best_fit_circle.center.x = (x1 + x2 + third_vertex.x) / 3
+        self.best_fit_circle.center.y = (y1 + y2 + third_vertex.y) / 3
 
 
 class Detection2dLidar(Node):
@@ -146,7 +103,7 @@ class Detection2dLidar(Node):
                                             ('p_max_split_distance', 0.2),
                                             ('p_min_group_points', 5),
                                             ('p_max_merge_separation', 0.02),
-                                            ('p_max_merge_spread', 0.02),
+                                            ('p_max_merge_spread', 0.01),
                                             ('p_max_circle_radius', 0.6),
                                             ('p_radius_enlargement', 0.25)])
         self.p_max_group_distance = self.get_parameter('p_max_group_distance').value
@@ -425,127 +382,12 @@ class Detection2dLidar(Node):
         self.get_logger().info("%d groups separated into %d lines and %d circles" %
                                (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles)))
 
-    def visualize_groups(self):
-        """
-        Visualize all groups in self.groups, where every group gets its own color.
-        :return: a MarkerArray() to be published to RViz
-        """
-        marker_list = []
-        dummy_id = 0
-        for grp in self.groups:
-            color_for_this_group = COLOR_PALETTES[self.groups.index(grp)]
-            for pt in grp.points:
-                marker = Marker()
-                marker.id = dummy_id
-                marker.header = self.header
-                marker.type = Marker.SPHERE
-                marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
-                marker.color.a = 0.5
-                marker.color.r = color_for_this_group[0]
-                marker.color.g = color_for_this_group[1]
-                marker.color.b = color_for_this_group[2]
-                marker.scale.x = 0.1
-                marker.scale.y = 0.1
-                marker.scale.z = 0.1
-                marker.pose.orientation.x = 0.0
-                marker.pose.orientation.y = 0.0
-                marker.pose.orientation.z = 0.0
-                marker.pose.orientation.w = 1.0
-                marker.pose.position.x = pt.x
-                marker.pose.position.y = pt.y
-                marker_list.append(marker)
-                if dummy_id not in self._point_IDs:
-                    self._point_IDs.append(dummy_id)
-                dummy_id += 1
-
-        # delete markers from previous message that are not present in current message
-        for id_to_del in self._point_IDs[dummy_id:]:
-            marker = Marker()
-            marker.id = id_to_del
-            marker.action = Marker.DELETE
-            marker_list.append(marker)
-        self._point_IDs = self._point_IDs[:dummy_id]
-
-        # publish
-        marker_array = MarkerArray()
-        marker_array.markers = marker_list
-        return marker_array
-
-    def visualize_obstacles(self):
-        """
-        Visualize line and circle obstacles
-        :return: a MarkerArray() to be published to RViz
-        """
-        marker_list = []
-        dummy_id = 0
-
-        # Obstacles represented by lines
-        for grp in self.obstacles_lines:
-            marker = Marker()
-            marker.id = dummy_id
-            marker.header = self.header
-            marker.type = Marker.LINE_STRIP
-            marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
-            marker.color.a = 0.8
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 0.0
-            marker.scale.x = 0.1
-            marker.points = grp.best_fit_line.endpoints
-            marker.pose.orientation.x = 0.0
-            marker.pose.orientation.y = 0.0
-            marker.pose.orientation.z = 0.0
-            marker.pose.orientation.w = 1.0
-            marker_list.append(marker)
-            if dummy_id not in self._obstacle_IDs:
-                self._obstacle_IDs.append(dummy_id)
-            dummy_id += 1
-
-        # Obstacles represented by circles
-        for grp in self.obstacles_circles:
-            marker = Marker()
-            marker.id = dummy_id
-            marker.header = self.header
-            marker.type = Marker.CYLINDER
-            marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
-            marker.color.a = 0.8
-            marker.color.r = 0.0
-            marker.color.g = 0.0
-            marker.color.b = 1.0
-            marker.scale.x, marker.scale.y = float(grp.best_fit_circle.radius * 2), float(grp.best_fit_circle.radius * 2)  # set different xy values for ellipse
-            marker.scale.z = 0.1
-            marker.pose.position.x = grp.best_fit_circle.center.x
-            marker.pose.position.y = grp.best_fit_circle.center.y
-            marker.pose.position.z = marker.scale.z / 2
-            marker.pose.orientation.x = 0.0
-            marker.pose.orientation.y = 0.0
-            marker.pose.orientation.z = 0.0
-            marker.pose.orientation.w = 1.0
-            marker_list.append(marker)
-            if dummy_id not in self._obstacle_IDs:
-                self._obstacle_IDs.append(dummy_id)
-            dummy_id += 1
-
-        # delete detections from previous message that are not present in current message
-        for id_to_del in self._obstacle_IDs[dummy_id:]:
-            marker = Marker()
-            marker.id = id_to_del
-            marker.action = Marker.DELETE
-            marker_list.append(marker)
-        self._obstacle_IDs = self._obstacle_IDs[:dummy_id]
-
-        # publish
-        marker_array = MarkerArray()
-        marker_array.markers = marker_list
-        return marker_array
-
     def visualize_groups_and_obstacles(self):
         marker_list = []
         dummy_id = 0
 
         # Groups
         for grp in self.groups:
-            color_for_this_group = COLOR_PALETTES[self.groups.index(grp)]
             for pt in grp.points:
                 marker = Marker()
                 marker.id = dummy_id
@@ -553,9 +395,9 @@ class Detection2dLidar(Node):
                 marker.type = Marker.SPHERE
                 marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
                 marker.color.a = 0.5
-                marker.color.r = color_for_this_group[0]
-                marker.color.g = color_for_this_group[1]
-                marker.color.b = color_for_this_group[2]
+                marker.color.r = 0.9
+                marker.color.g = 0.9
+                marker.color.b = 0.9
                 marker.scale.x = 0.1
                 marker.scale.y = 0.1
                 marker.scale.z = 0.1
