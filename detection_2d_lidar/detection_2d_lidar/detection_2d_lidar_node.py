@@ -171,7 +171,8 @@ class Detection2dLidar(Node):
                                             ('p_max_merge_separation', 0.02),
                                             ('p_max_merge_spread', 0.01),
                                             ('p_max_circle_radius', 0.7),
-                                            ('p_radius_enlargement', 0.25)])
+                                            ('p_radius_enlargement', 0.25),
+                                            ('p_min_obstacle_size', 0.01)])
         self.p_max_group_distance = self.get_parameter('p_max_group_distance').value
         self.p_distance_proportion = self.get_parameter('p_distance_proportion').value
         self.p_max_split_distance = self.get_parameter('p_max_split_distance').value
@@ -180,6 +181,7 @@ class Detection2dLidar(Node):
         self.p_max_merge_spread = self.get_parameter('p_max_merge_spread').value
         self.p_max_circle_radius = self.get_parameter('p_max_circle_radius').value
         self.p_radius_enlargement = self.get_parameter('p_radius_enlargement').value
+        self.p_min_obstacle_size = self.get_parameter('p_min_obstacle_size').value
 
         self.header = None
 
@@ -254,6 +256,7 @@ class Detection2dLidar(Node):
         self.segmentation()   # calculates best fit line
         self.segment_merging()
         self.circle_extraction()   # calculates best fit circle and categorizes into line vs. circle obstacles
+        self.remove_small_obstacles()
 
         # visualizing in RViz
         self.marker_pub.publish(self.visualize_groups_and_obstacles())
@@ -447,6 +450,38 @@ class Detection2dLidar(Node):
 
         self.get_logger().info("%d groups separated into %d lines and %d circles" %
                                (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles)))
+
+    def remove_small_obstacles(self):
+        """
+        Only keep those obstacles which satisfy these conditions:
+        - line obstacles with length >= p_min_obstacle_size
+        - circle obstacles with length >= p_min_obstacle_size
+
+        If p_min_obstacle_size is 0, then this method remove_small_obstacles() should have no effect.
+        If p_min_obstacle_size is +infinity, then no obstacles, however big, will be remaining.
+        """
+
+        # conditions in which to return preemptively
+        if self.p_min_obstacle_size <= 0.0:
+            return
+        elif self.p_min_obstacle_size == float('inf'):
+            self.obstacles_lines = []
+            self.obstacles_circles = []
+            return
+
+        no_of_detected_lines, no_of_detected_circles = len(self.obstacles_lines), len(self.obstacles_circles)
+
+        # iterate over lines and circles to check which ones to keep
+        self.obstacles_lines = [grp for grp in self.obstacles_lines
+                                if grp.best_fit_line.length >= self.p_min_obstacle_size]
+        self.obstacles_circles = [grp for grp in self.obstacles_circles
+                                  if grp.best_fit_circle.radius >= self.p_min_obstacle_size]
+
+        # print message if any lines or circles were removed
+        one_or_more_obstacles_removed = len(self.obstacles_lines) < no_of_detected_lines or len(self.obstacles_circles) < no_of_detected_circles
+        if one_or_more_obstacles_removed:
+            self.get_logger().info("After removing small obstacles, %d lines and %d circles remain" %
+                                   (len(self.obstacles_lines), len(self.obstacles_circles)))
 
     def visualize_groups_and_obstacles(self):
         marker_list = []
