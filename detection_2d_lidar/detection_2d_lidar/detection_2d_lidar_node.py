@@ -461,18 +461,19 @@ class Detection2dLidar(Node):
                 marker.type = Marker.SPHERE
                 marker.action = 0  # 0 add/modify an object, 1 (deprecated), 2 deletes an object, 3 deletes all objects
                 marker.color.a = 0.5
-                marker.color.r = 0.9
+                marker.color.r = 0.0
                 marker.color.g = 0.9
-                marker.color.b = 0.9
-                marker.scale.x = 0.1
-                marker.scale.y = 0.1
-                marker.scale.z = 0.1
+                marker.color.b = 0.0
+                marker.scale.x = 0.05
+                marker.scale.y = 0.05
+                marker.scale.z = 0.05
                 marker.pose.orientation.x = 0.0
                 marker.pose.orientation.y = 0.0
                 marker.pose.orientation.z = 0.0
                 marker.pose.orientation.w = 1.0
                 marker.pose.position.x = pt.x
                 marker.pose.position.y = pt.y
+                marker.pose.position.z = 0.0
                 marker_list.append(marker)
                 if dummy_id not in self._all_marker_IDs:
                     self._all_marker_IDs.append(dummy_id)
@@ -491,6 +492,7 @@ class Detection2dLidar(Node):
             marker.color.b = 0.0
             marker.scale.x = 0.05
             marker.points = grp.best_fit_line.endpoints
+            marker.points[0].z, marker.points[1].z = 0.035, 0.035  # based on diameter of sphere markers
             marker.pose.orientation.x = 0.0
             marker.pose.orientation.y = 0.0
             marker.pose.orientation.z = 0.0
