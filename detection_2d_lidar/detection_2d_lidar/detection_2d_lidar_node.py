@@ -192,8 +192,6 @@ class Detection2dLidar(Node):
         self.obstacles_circles = []  # list of obstacles represented as circles
 
         # for keeping track of which markers to delete
-        self._point_IDs = []
-        self._obstacle_IDs = []
         self._all_marker_IDs = []
 
         # Subscribe to /scan topic on which input lidar data is available
