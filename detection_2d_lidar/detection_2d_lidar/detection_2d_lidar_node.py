@@ -1,3 +1,5 @@
+import time
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import ReliabilityPolicy, QoSProfile
@@ -207,6 +209,7 @@ class Detection2dLidar(Node):
         theta = np.arange(laser_scan.angle_min, laser_scan.angle_max, laser_scan.angle_increment)
         print("-----------")
         r = np.array(laser_scan.ranges)
+        print("Number of samples = %d, resolution = %.4f degree" % (len(theta), laser_scan.angle_increment * 180.0 / np.pi))
 
         # making sure len(theta) == len(r)  [is this check even required?]
         if len(theta) != len(r):
@@ -249,6 +252,8 @@ class Detection2dLidar(Node):
         vi) Circle merging
         """
 
+        start_time = time.time()
+
         self.grouping()
         self.splitting()
         self.segmentation()   # calculates best fit line
@@ -259,6 +264,8 @@ class Detection2dLidar(Node):
         # visualizing in RViz
         self.marker_pub.publish(self.visualize_groups_and_obstacles())
 
+        self.get_logger().info("Time taken to process scan %.3f" % (time.time() - start_time))
+
     def grouping(self):
         """
         Section 2.1 of the paper
@@ -267,6 +274,8 @@ class Detection2dLidar(Node):
         Returns:
             list of all groups
         """
+        _time = time.time()
+
         points_remaining = deepcopy(self.points)
 
         while len(points_remaining) > 0:  # as points will be assigned to a group, they will be removed
@@ -291,7 +300,8 @@ class Detection2dLidar(Node):
             self.groups.append(a_group)
             points_remaining = [point for point in points_remaining if point not in a_group.points]
 
-        self.get_logger().info("grouping() completed, number of groups = %d" % len(self.groups))
+        self.get_logger().info("grouping() completed, number of groups = %d (took %.2f sec)" % (len(self.groups),
+                                                                                                (time.time() - _time)))
 
     def splitting(self):
         """
@@ -301,6 +311,7 @@ class Detection2dLidar(Node):
 
         The actual algorithm is recursive, but for our purpose may be just one "sweep" is enough
         """
+        _time = time.time()
 
         groups_after_splitting = []
 
@@ -367,7 +378,8 @@ class Detection2dLidar(Node):
                 groups_after_splitting.append(grp)
 
         self.groups = groups_after_splitting
-        self.get_logger().info("splitting() completed, number of groups = %d" % len(self.groups))
+        self.get_logger().info("splitting() completed, number of groups = %d (took %.2f sec)" % (len(self.groups),
+                                                                                                 (time.time() - _time)))
 
     def segmentation(self):
         """
@@ -375,10 +387,12 @@ class Detection2dLidar(Node):
 
         Regress a line to each group
         """
+        _time = time.time()
+
         for grp in self.groups:
             grp.calculate_best_fit_line()
 
-        # self.get_logger().info("segmentation() completed")
+        self.get_logger().info("segmentation() completed (took %.2f sec)" % (time.time() - _time))
 
     def segment_merging(self):
         """
@@ -386,6 +400,8 @@ class Detection2dLidar(Node):
 
         Merge segments by checking 2 conditions
         """
+        _time = time.time()
+
         merged_groups = []
         pairwise_groups = list(itertools.combinations(self.groups, 2))
 
@@ -427,7 +443,8 @@ class Detection2dLidar(Node):
 
         # it's possible duplicates have crept into merged_groups, so they need to be removed
         self.groups = list(set(merged_groups))
-        self.get_logger().info("segment_merging() completed, number of groups = %d" % len(self.groups))
+        self.get_logger().info("segment_merging() completed, number of groups = %d (took %.2f sec)" % (len(self.groups),
+                                                                                                       (time.time() - _time)))
 
     def circle_extraction(self):
         """
@@ -436,6 +453,8 @@ class Detection2dLidar(Node):
         Only circles less than a certain radius is considered to be a circular obstacle.
         That's because some best fit lines can be very long and the circle for those obstacles would be too huge!
         """
+        _time = time.time()
+
         # compute best fit circles for all the groups
         for grp in self.groups:
             grp.calculate_best_fit_circle()
@@ -446,8 +465,9 @@ class Detection2dLidar(Node):
             else:
                 self.obstacles_lines.append(grp)
 
-        self.get_logger().info("%d groups separated into %d lines and %d circles" %
-                               (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles)))
+        self.get_logger().info("%d groups separated into %d lines and %d circles (took %.2f sec)" %
+                               (len(self.groups), len(self.obstacles_lines), len(self.obstacles_circles),
+                                (time.time() - _time)))
 
     def remove_small_obstacles(self):
         """
@@ -458,6 +478,7 @@ class Detection2dLidar(Node):
         If p_min_obstacle_size is 0, then this method remove_small_obstacles() should have no effect.
         If p_min_obstacle_size is +infinity, then no obstacles, however big, will be remaining.
         """
+        _time = time.time()
 
         # conditions in which to return preemptively
         if self.p_min_obstacle_size <= 0.0:
@@ -478,8 +499,8 @@ class Detection2dLidar(Node):
         # print message if any lines or circles were removed
         one_or_more_obstacles_removed = len(self.obstacles_lines) < no_of_detected_lines or len(self.obstacles_circles) < no_of_detected_circles
         if one_or_more_obstacles_removed:
-            self.get_logger().info("After removing small obstacles, %d lines and %d circles remain" %
-                                   (len(self.obstacles_lines), len(self.obstacles_circles)))
+            self.get_logger().info("After removing small obstacles, %d lines and %d circles remain (took %.2f sec)" %
+                                   (len(self.obstacles_lines), len(self.obstacles_circles), (time.time() - _time)))
 
     def visualize_groups_and_obstacles(self):
         marker_list = []
