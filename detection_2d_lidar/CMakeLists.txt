@@ -15,17 +15,19 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # find header files
 include_directories(
   include
 )
 
-add_executable(detector_2d_lidar src/detector_2d_lidar.cpp src/main.cpp)
-ament_target_dependencies(detector_2d_lidar rclcpp std_msgs geometry_msgs)
+add_executable(detection_2d_lidar src/detection_2d_lidar.cpp src/detection_2d_lidar_node.cpp src/main.cpp)
+ament_target_dependencies(detection_2d_lidar rclcpp std_msgs geometry_msgs sensor_msgs visualization_msgs)
 
 install(TARGETS
-  detector_2d_lidar
+  detection_2d_lidar
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
