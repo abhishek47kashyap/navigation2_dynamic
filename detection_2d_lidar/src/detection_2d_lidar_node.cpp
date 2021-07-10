@@ -60,6 +60,8 @@ void Detection2DLidarNode::callbackLidarData(sensor_msgs::msg::LaserScan::ConstS
             p.x = r * cos(laser_scan->angle_min + (i * laser_scan->angle_increment));
             p.y = r * sin(laser_scan->angle_min + (i * laser_scan->angle_increment));
             p.z = 0.0;
+
+            this->points.push_back(p);
         }
         i = i + 1.0;
     }
