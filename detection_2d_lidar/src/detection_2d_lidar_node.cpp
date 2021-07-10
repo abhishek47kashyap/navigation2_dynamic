@@ -83,3 +83,43 @@ void Detection2DLidarNode::detectObstacles()
 {
 
 }
+
+void Detection2DLidarNode::grouping()
+{
+
+}
+
+void Detection2DLidarNode::splitting()
+{
+    
+}
+
+void Detection2DLidarNode::segmentation()
+{
+    
+}
+
+void Detection2DLidarNode::segmentMerging()
+{
+    
+}
+
+void Detection2DLidarNode::circleFitting()
+{
+    
+}
+
+void Detection2DLidarNode::obstacleClassification()
+{
+    
+}
+
+void Detection2DLidarNode::removeSmallObstacles()
+{
+    
+}
+
+void Detection2DLidarNode::visualization()
+{
+    
+}

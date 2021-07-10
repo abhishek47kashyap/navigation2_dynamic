@@ -9,7 +9,7 @@ std::vector<geometry_msgs::msg::Point>::size_type Group::num_points()
 
 void Group::add_points(const std::vector<geometry_msgs::msg::Point>& _points)
 {
-    for (geometry_msgs::msg::Point _point : _points)
+    for (const geometry_msgs::msg::Point &_point : _points)
         points.push_back(_point);
     
     points.shrink_to_fit();
@@ -34,7 +34,7 @@ void Group::calculate_best_fit_line()
 
     /* calculate slope and y-intercept: https://en.wikipedia.org/wiki/Simple_linear_regression#Fitting_the_regression_line */
     float numerator = 0.0, denominator = 0.0;
-    for (geometry_msgs::msg::Point _point : points)
+    for (const geometry_msgs::msg::Point &_point : points)
     {
         numerator += (_point.x - mean_x) * (_point.y - mean_y);
         denominator += pow((_point.x - mean_x), 2);
@@ -46,7 +46,7 @@ void Group::calculate_best_fit_line()
     float min_range = std::numeric_limits<float>::max();
     float max_range = 0.0;
     geometry_msgs::msg::Point endpoint_near, endpoint_far;
-    for (geometry_msgs::msg::Point _point : points)
+    for (const geometry_msgs::msg::Point &_point : points)
     {
         float _dist_from_origin = distance_from_origin(_point);
         
@@ -91,7 +91,7 @@ void Group::_circle_fitting_barycenter_method()
 
     /* radius calculation */
     best_fit_circle.radius = 0.0;
-    for (geometry_msgs::msg::Point _point : points)
+    for (const geometry_msgs::msg::Point &_point : points)
     {
         float d = distance_between_points(_point, best_fit_circle.center);
         if (d > best_fit_circle.radius)
@@ -140,7 +140,7 @@ void Group::_circle_fitting_least_squares_method()
 void Group::_get_group_center_of_mass(float *mean_x, float *mean_y)
 {
     float all_x = 0.0, all_y = 0.0;
-    for (geometry_msgs::msg::Point _point : points)
+    for (const geometry_msgs::msg::Point &_point : points)
     {
         all_x += _point.x;
         all_y += _point.y;
