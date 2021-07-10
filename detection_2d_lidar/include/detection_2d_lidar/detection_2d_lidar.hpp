@@ -29,7 +29,6 @@ struct circle {
 class Group{
     line best_fit_line;
     circle best_fit_circle;
-    std::vector<geometry_msgs::msg::Point> points;
 
     void _circle_fitting_barycenter_method();
     void _circle_fitting_equilateral_triangle_method();
@@ -38,7 +37,9 @@ class Group{
     void _get_group_center_of_mass(float *mean_x, float *mean_y);
 
 public:
+    std::vector<geometry_msgs::msg::Point> points;
     std::vector<geometry_msgs::msg::Point>::size_type num_points();
+    void add_point(const geometry_msgs::msg::Point& _point);
     void add_points(const std::vector<geometry_msgs::msg::Point>& _points);
     void overwrite(const std::vector<geometry_msgs::msg::Point>& _points);
     void clear();

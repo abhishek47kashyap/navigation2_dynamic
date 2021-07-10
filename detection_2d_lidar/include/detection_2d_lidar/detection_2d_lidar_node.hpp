@@ -10,6 +10,7 @@ class Detection2DLidarNode : public rclcpp::Node
 public:
     Detection2DLidarNode();
     ~Detection2DLidarNode();
+
 protected:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::ConstSharedPtr laser_scan_sub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::ConstSharedPtr visualization_marker_pub_;

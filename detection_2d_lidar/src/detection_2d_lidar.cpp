@@ -7,6 +7,11 @@ std::vector<geometry_msgs::msg::Point>::size_type Group::num_points()
     return points.size();
 }
 
+void Group::add_point(const geometry_msgs::msg::Point& _point)
+{
+    points.push_back(_point);
+}
+
 void Group::add_points(const std::vector<geometry_msgs::msg::Point>& _points)
 {
     for (const geometry_msgs::msg::Point &_point : _points)
