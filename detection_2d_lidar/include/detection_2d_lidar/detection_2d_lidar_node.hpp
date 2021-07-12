@@ -37,7 +37,7 @@ protected:
     void detectObstacles();
     void grouping();
     void splitting();
-    void segmentation();
+    void lineFitting();
     void segmentMerging();
     void circleFitting();
     void obstacleClassification();

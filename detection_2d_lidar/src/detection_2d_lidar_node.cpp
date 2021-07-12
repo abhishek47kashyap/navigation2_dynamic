@@ -90,8 +90,6 @@ void Detection2DLidarNode::detectObstacles()
 
 void Detection2DLidarNode::grouping()
 {
-    RCLCPP_INFO(get_logger(), "Starting grouping");
-
     // create a copy of the points
     std::vector<geometry_msgs::msg::Point> copy_of_points(points);
 
@@ -127,7 +125,7 @@ void Detection2DLidarNode::grouping()
         // at this point, all points satisfying the above condition have been added to group
         groups.push_back(grp);
 
-        // prune copy_of_points
+        // prune copy_of_points (TODO: can this be optimized?)
         auto membership_check = [grp](const geometry_msgs::msg::Point& p) -> bool { 
             return std::find(grp.points.begin(), grp.points.end(), p) != grp.points.end();   // check if 'p' is in 'grp'
             };
@@ -139,12 +137,24 @@ void Detection2DLidarNode::grouping()
 
 void Detection2DLidarNode::splitting()
 {
-    
+    std::vector<Group> groups_after_splitting;
+
+    for (Group& grp : groups)
+    {
+        // if group already has too few points no point splitting it
+        if (grp.num_points() <= p_min_group_points)
+            continue;
+        
+
+    } 
 }
 
-void Detection2DLidarNode::segmentation()
+void Detection2DLidarNode::lineFitting()
 {
+    for (Group& grp : groups)
+        grp.calculate_best_fit_line();
     
+    RCLCPP_INFO(get_logger(), "Line fitting completed");
 }
 
 void Detection2DLidarNode::segmentMerging()
@@ -154,17 +164,59 @@ void Detection2DLidarNode::segmentMerging()
 
 void Detection2DLidarNode::circleFitting()
 {
-    
+    for (Group& grp : groups)
+        grp.calculate_best_fit_circle();  // defaults to LEAST SQUARES METHOD
 }
 
 void Detection2DLidarNode::obstacleClassification()
 {
-    
+    for (const Group& grp : groups)
+    {
+        // check whether circle (after enlargement) is to be categorized as a circle obstacle or line obstacle
+        if (grp.best_fit_circle.radius + p_radius_enlargement <= p_max_circle_radius)
+            obstacle_circles.push_back(grp);
+        else
+            obstacle_lines.push_back(grp);
+    }
+
+    RCLCPP_INFO(get_logger(), "%ld groups separated into %ld lines and %ld circles", groups.size(), obstacle_lines.size(), obstacle_circles.size());
 }
 
 void Detection2DLidarNode::removeSmallObstacles()
 {
-    
+    /*
+        Only keep those obstacles which satisfy these conditions:
+            - line obstacles with length >= p_min_obstacle_size
+            - circle obstacles with length >= p_min_obstacle_size
+
+            If p_min_obstacle_size is 0, then this method remove_small_obstacles() should have no effect.
+            If p_min_obstacle_size is +infinity, then no obstacles, however big, will be remaining.
+    */
+
+    // conditions in which to return preemptively
+    if (p_min_obstacle_size <= 0.0)
+        return;
+    else if (p_min_obstacle_size == std::numeric_limits<float>::max())
+    {
+        obstacle_lines.clear();
+        obstacle_circles.clear();
+        return;
+    }
+
+    // before filtering (to show a message)
+    const size_t num_obstacle_lines = obstacle_lines.size();
+    const size_t num_obstacle_circles = obstacle_circles.size();
+
+    // filter out lines smaller than p_min_obstacle_size
+    auto line_length_check = [&](Group& _grp) -> bool {return _grp.best_fit_line.length() <= p_min_obstacle_size;};
+    obstacle_lines.erase(std::remove_if(obstacle_lines.begin(), obstacle_lines.end(), line_length_check), obstacle_lines.end());
+    // filter out circle with radius smaller than p_min_obstacle_size
+    auto circle_radius_check = [&](Group& _grp) -> bool {return _grp.best_fit_circle.radius <= p_min_obstacle_size;};
+    obstacle_circles.erase(std::remove_if(obstacle_circles.begin(), obstacle_circles.end(), circle_radius_check), obstacle_circles.end());
+
+    // print message if any lines or circles were removed
+    if ((obstacle_lines.size() < num_obstacle_lines) || (obstacle_circles.size() < num_obstacle_circles))
+        RCLCPP_INFO(get_logger(), "After removing small obstacles, %ld lines and %ld circles remain", obstacle_lines.size(), obstacle_circles.size());
 }
 
 void Detection2DLidarNode::visualization()
