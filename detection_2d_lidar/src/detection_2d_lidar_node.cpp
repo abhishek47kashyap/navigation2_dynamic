@@ -145,8 +145,86 @@ void Detection2DLidarNode::splitting()
         if (grp.num_points() <= p_min_group_points)
             continue;
         
+        // Find longest line
+        std::vector<std::pair<geometry_msgs::msg::Point, geometry_msgs::msg::Point>> pairwise_points = pairwise_combination<geometry_msgs::msg::Point>(grp.points);
+        float longest_length = 0.0;
+        geometry_msgs::msg::Point end_point_1, end_point_2;
+        for (auto& pair : pairwise_points)
+        {
+            const geometry_msgs::msg::Point point_1 = pair.first;
+            const geometry_msgs::msg::Point point_2 = pair.second;
+            const float d = distance_between_points(point_1, point_2);
+            if (d > longest_length)
+            {
+                longest_length = d;
+                end_point_1.x = point_1.x;
+                end_point_1.y = point_1.y;
+                end_point_2.x = point_2.x;
+                end_point_2.y = point_2.y;
+            }
+        }
+        end_point_1.z = 0.0;
+        end_point_2.z = 0.0;
 
-    } 
+        // Find farthest point from longest line (this point would be somewhere "between" the end_points)
+        float d_max = 0.0;
+        geometry_msgs::msg::Point farthest_point;
+        for (const geometry_msgs::msg::Point& _point : grp.points)
+        {
+            // end points of the longest line should not be used
+            if ((_point.x == end_point_1.x && _point.y == end_point_1.y) || (_point.x == end_point_2.x && _point.y == end_point_2.y))
+                continue;
+
+            const float d_point_from_line = distance_point_from_line(end_point_1, end_point_2, _point);
+            if (d_point_from_line > d_max)
+            {
+                d_max = d_point_from_line;
+                farthest_point.x = _point.x;
+                farthest_point.y = _point.y;
+            }
+        }
+        farthest_point.z = 0.0;
+
+        // Perform check whether group should be split
+        const float r = distance_from_origin(farthest_point);
+        if (d_max > p_max_split_distance + r * p_distance_proportion)
+        {
+            // points "between" end_point_1 and farthest_point go into grp1, rest into grp2
+            Group grp1, grp2;
+            grp1.add_point(end_point_1);
+            grp2.add_point(end_point_2);
+
+            // put farthest point in both groups
+            grp1.add_point(farthest_point);
+            grp2.add_point(farthest_point);
+
+            // go through the rest of the points
+            for (const geometry_msgs::msg::Point& _point : grp.points)
+            {
+                // endpoints and farthest point have already been dealt with
+                if (same_3d_point(_point, end_point_1) || same_3d_point(_point, end_point_2) || same_3d_point(_point, farthest_point))
+                    continue;
+                
+                const float d_point_from_grp1_line = distance_point_from_line(end_point_1, farthest_point, _point);
+                const float d_point_from_grp2_line = distance_point_from_line(farthest_point, end_point_2, _point);
+                
+                if (d_point_from_grp1_line < d_point_from_grp2_line)
+                    grp1.add_point(_point);
+                else
+                    grp2.add_point(_point);
+            }
+
+            // all points have now been split into 2 groups
+            groups_after_splitting.push_back(grp1);
+            groups_after_splitting.push_back(grp2);
+        }
+        else  // group does not have to be split, push back the unsplit group
+            groups_after_splitting.push_back(grp);
+    }
+
+    groups.clear();
+    groups = groups_after_splitting;  // TODO: will this work?
+    RCLCPP_INFO(get_logger(), "Splitting completed, number of groups = %ld", groups.size());
 }
 
 void Detection2DLidarNode::lineFitting()

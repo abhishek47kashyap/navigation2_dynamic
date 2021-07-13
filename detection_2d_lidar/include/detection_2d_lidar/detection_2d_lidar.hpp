@@ -9,6 +9,21 @@ float distance_from_origin(const geometry_msgs::msg::Point& _point);
 float distance_between_points(const geometry_msgs::msg::Point& _point1, const geometry_msgs::msg::Point& _point2);
 float distance_point_from_line(const geometry_msgs::msg::Point& _endPoint1, const geometry_msgs::msg::Point& _endPoint2, const geometry_msgs::msg::Point& _anyPoint);
 
+template <typename T>
+std::vector<std::pair<T, T>> pairwise_combination(const std::vector<T>& dataset)
+{
+    std::vector<std::pair<T, T>> combs;
+    for (long unsigned int i = 0; i <= dataset.size() - 2; ++i) 
+    {
+        for (long unsigned int j = i+1; j <= dataset.size() - 1; ++j)
+            combs.push_back(std::pair<T, T>(dataset[i], dataset[j]));
+    }
+    return combs;
+}
+
+bool same_3d_point(const geometry_msgs::msg::Point& ptA, const geometry_msgs::msg::Point& ptB);
+
+
 struct line {
   float slope, intercept;
   geometry_msgs::msg::Point endpoints[2];

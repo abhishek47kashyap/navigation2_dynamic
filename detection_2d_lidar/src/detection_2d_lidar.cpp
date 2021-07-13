@@ -170,3 +170,11 @@ float distance_point_from_line(const geometry_msgs::msg::Point& _endPoint1, cons
     const float denominator = sqrt(pow((_endPoint1.x - _endPoint2.x), 2) + pow((_endPoint1.y - _anyPoint.y), 2));
     return numerator / denominator;
 }
+
+bool same_3d_point(const geometry_msgs::msg::Point& ptA, const geometry_msgs::msg::Point& ptB)
+{
+    if (ptA.x == ptB.x && ptA.y == ptB.y && ptA.z == ptB.z)
+        return true;
+    else
+        return false;
+}
